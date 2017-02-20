@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/sendfile.h>
 #include "rget.h"
 
 void init_argu(struct argu_option *x) {
@@ -103,21 +104,25 @@ bool process_request(int cfd) {
 			s.force = true;
 	}
 
-	if(access(n==3?arg[1]:arg[0],F_OK) != 0)  //检查用户权限
-		return false;
+	printf("arg_num=%d, arg[0]=%s, arg[1]=%s\n",arg_num,arg[0],arg[1]);
+	if(access(arg_num==3?arg[1]:arg[0],F_OK) != 0)  //检查调用进程是否有指定路径的权限
+		printf("no access,error %m\n"),exit(-1);
+		//return false;
 
-	if(stat(n==3?arg[1]:arg[0],&sbuf) == -1) 
-		return false;
+	if(stat(arg_num==3?arg[1]:arg[0],&sbuf) == -1) 
+		printf("get file status error %m\n"),exit(-1);
+		//return false;
 	
 	if(S_ISDIR(sbuf.st_mode)) {
 		if(s.recursive) {
-			is_dir(n==3?arg[1]:arg[0],cfd);
+			is_dir(arg_num==3?arg[1]:arg[0],cfd);
 		}
-		else
+		else {
 			send(cfd,"err",3,0);
+		}
 	} else if(S_ISREG(sbuf.st_mode)) {
 		send(cfd,"yes",3,0);   //client 没有-参数时，判断传入的是dir or file
-		if(!is_regfile(n==3?arg[1]:arg[0],cfd))
+		if(!is_regfile(arg_num==3?arg[1]:arg[0],cfd))
 			PrtErr("is_regfile err");
 	}
 	return true;
@@ -176,14 +181,15 @@ bool send_filedata(char *filename,int fd) {
                 if(size == -1) break;
                 if(size == 0) break;
                 if(size > 0) {
-                        res = send(fd,&size,sizeof(size),0);
+                        res = send(fd,&size,sizeof(size),0); //将读取的文件内容长度发送给client
                         if(res == -1) break;
-                        res = send(fd,buf,size,0);
+                        res = send(fd,buf,size,0);	//将文件内容发送给client
+			//res = sendfile(fd,ffd,NULL,size); //使用zero-copy机制传输数据
                         if(res == -1) break;
                 }
         }
         size = 0;
-        res = send(fd,&size,sizeof(size),0);
+        res = send(fd,&size,sizeof(size),0);  //发送0，即文件结尾
         close(ffd);
 
 	return true;
